@@ -201,7 +201,7 @@ static int sleep_enable;
 #endif
 #ifdef SUPPORT_TP_TOUCHKEY
 static int key_switch;
-static bool key_back_disable, key_appselect_disable;
+static int key_disable = 0;
 #endif
 static struct synaptics_ts_data *ts_g;
 static struct workqueue_struct *synaptics_wq;
@@ -1528,21 +1528,21 @@ static void int_key_report_s3508(struct synaptics_ts_data *ts)
 		TPD_ERR("touch_key[0x%x],touchkey_state[0x%x]\n",
 		button_key, ts->pre_btn_state);
 	if ((button_key & 0x01) && !(ts->pre_btn_state & 0x01)
-	&& !key_back_disable) {
+	&& key_disable != 0) {
 		input_report_key(ts->input_dev, OEM_KEY_LEFT, 1);
 		input_sync(ts->input_dev);
 	} else if (!(button_key & 0x01) && (ts->pre_btn_state & 0x01)
-	&& !key_back_disable){
+	&& key_disable != 0){
 		input_report_key(ts->input_dev, OEM_KEY_LEFT, 0);
 		input_sync(ts->input_dev);
 	}
 
 	if ((button_key & 0x02) && !(ts->pre_btn_state & 0x02)
-	&& !key_appselect_disable) {
+	&& key_disable != 0) {
 		input_report_key(ts->input_dev, OEM_KEY_RIGHT, 1);
 		input_sync(ts->input_dev);
 	} else if (!(button_key & 0x02) && (ts->pre_btn_state & 0x02)
-	&& !key_appselect_disable) {
+	&& key_disable != 0) {
 		input_report_key(ts->input_dev, OEM_KEY_RIGHT, 0);
 		input_sync(ts->input_dev);
 	}
@@ -3539,47 +3539,29 @@ char __user *user_buf, size_t count, loff_t *ppos)
 	if (!ts)
 		return ret;
 
-	TPD_ERR("%s key_back:%s key_appselect:%s\n", __func__,
-	key_back_disable ? "disable":"enable",
-	key_appselect_disable ? "disable":"enable");
+	TPD_ERR("%s key_disable:%s\n", __func__,
+			key_disable != 0 ? "key_disable = true(1)":"key_disable = false(0)");
 
-	ret = snprintf(page, 64,
-	"cmd:enable,disable\nkey_back:%s key_appselect:%s\n",
-	key_back_disable ? "disable":"enable",
-	key_appselect_disable ? "disable":"enable");
+	ret = snprintf(page, 64, "cmd:0 (false), 1 (true)\nkey_disable:%s\n",
+			key_disable != 0 ? "1 (true)":"0 (false)");
 
-	ret = simple_read_from_buffer(user_buf, count,
-	ppos, page, strlen(page));
+	ret = simple_read_from_buffer(user_buf, count, ppos, page, strlen(page));
 
 	return ret;
 }
 
 static ssize_t key_disable_write_func(struct file *file,
-const char __user *buffer, size_t count, loff_t *ppos)
+const char __user *user_buf, size_t count, loff_t *ppos)
 {
-	char buf[PAGESIZE];
-	struct synaptics_ts_data *ts = ts_g;
+	int ret, write_flag = 0;
+	char page[PAGESIZE] = {0};
 
-	if (!ts)
-		return count;
-	if (count > sizeof(buf)) {
-		TPD_ERR("%s error\n", __func__);
-		return count;
-	}
+	ret = copy_from_user(page, user_buf, count);
+	ret = sscanf(page, "%d", &write_flag);
 
-	if (copy_from_user(buf, buffer, count)) {
-		TPD_ERR("%s copy error\n", __func__);
-		return count;
-	}
-	if (strnstr(buf, "disable", sizeof(buf)) != NULL) {
-		key_back_disable = true;
-		key_appselect_disable = true;
-	} else if (strnstr(buf, "enable", sizeof(buf)) != NULL) {
-		key_back_disable = false;
-		key_appselect_disable = false;
-	}
-	TPD_ERR("%s key_back:%d key_appselect:%d\n",
-	__func__, key_back_disable, key_appselect_disable);
+	key_disable = (write_flag != 0) ? 1 : 0;
+
+	TPD_ERR("%s key_disable:%s\n", __func__, key_disable != 0 ? "1 (true)":"0 (false)");
 
 	return count;
 }
